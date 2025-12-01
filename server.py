@@ -178,8 +178,21 @@ def handle_users(client, data):
     if group not in groups:
         send_json(client, {"type": "error", "message": f"Unknown group: {group}"})
         return
+    if client.username is None:
+        send_json(client, {"type": "error", "message": "Set username first"})
+        return
+
     with state_lock:
-        user_list = sorted(groups[group]["members"])
+        members = groups[group]["members"]
+        # ❗ Privacy: must be a member to see users
+        if client.username not in members:
+            send_json(client, {
+                "type": "error",
+                "message": f"You are not in group {group}"
+            })
+            return
+        user_list = sorted(members)
+
     send_json(client, {
         "type": "response",
         "command": "users",
@@ -218,7 +231,6 @@ def handle_leave(client, data):
     }
     broadcast_event(group, event, exclude_username=client.username)
 
-
 def handle_get_message(client, data):
     group = data.get("group", PUBLIC_GROUP)
     msg_id = data.get("id")
@@ -228,23 +240,40 @@ def handle_get_message(client, data):
     if msg_id is None:
         send_json(client, {"type": "error", "message": "Message ID required"})
         return
+    if client.username is None:
+        send_json(client, {"type": "error", "message": "Set username first"})
+        return
+
     with state_lock:
+        members = groups[group]["members"]
+        # ❗ Privacy: must be a member to see messages
+        if client.username not in members:
+            send_json(client, {
+                "type": "error",
+                "message": f"You are not in group {group}"
+            })
+            return
+
         messages = groups[group]["messages"]
         found = None
         for m in messages:
             if m["id"] == msg_id:
                 found = m
                 break
+
     if not found:
-        send_json(client, {"type": "error", "message": f"No message with ID {msg_id} in group {group}"})
+        send_json(client, {
+            "type": "error",
+            "message": f"No message with ID {msg_id} in group {group}"
+        })
         return
+
     send_json(client, {
         "type": "response",
         "command": "message",
         "group": group,
         "message": found
     })
-
 
 def disconnect_client(client: ClientInfo):
     # Remove from groups and global lists
