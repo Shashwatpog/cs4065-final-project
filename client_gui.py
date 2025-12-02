@@ -1,93 +1,203 @@
-#!/usr/bin/env python3
 import tkinter as tk
 from tkinter import scrolledtext, messagebox
+from tkinter import ttk
 import socket
 import json
 import threading
+
+TEAL = "#0A66C2"
+TEAL_DARK = "#00695C"
+WHITE = "#FFFFFF"
+BLACK = "#000000"
 
 class GuiClient:
     def __init__(self, root):
         self.root = root
         self.root.title("Bulletin Board Client (GUI)")
+        self.root.configure(bg=WHITE)
         self.sock = None
         self.sock_file = None
         self.connected = False
         self.send_lock = threading.Lock()
 
+        self.font_normal = ("Segoe UI", 10)
+        self.font_bold = ("Segoe UI", 10, "bold")
+        self.font_header = ("Segoe UI", 14, "bold")
+
+        # default group list; will be updated from server "groups" response
+        self.group_list = ["public", "group1", "group2", "group3", "group4", "group5"]
+
         self.build_ui()
 
-    def build_ui(self):
-        top = tk.Frame(self.root)
-        top.pack(fill=tk.X, padx=5, pady=5)
+    # Styling helpers
 
-        tk.Label(top, text="Host:").grid(row=0, column=0, sticky="w")
+    def style_button(self, button):
+        button.configure(
+            bg=TEAL,
+            fg=WHITE,
+            activebackground=TEAL_DARK,
+            activeforeground=WHITE,
+            relief="flat",
+            bd=0,
+            font=self.font_bold,
+            padx=10,
+            pady=5,
+            cursor="hand2"
+        )
+
+    def style_entry(self, entry):
+        entry.configure(
+            relief="solid",
+            bd=1,
+            highlightthickness=1,
+            highlightbackground=TEAL,
+            highlightcolor=TEAL,
+            font=self.font_normal,
+            insertbackground=BLACK,
+            bg=WHITE,
+            fg=BLACK
+        )
+
+    def create_card(self, parent):
+        frame = tk.Frame(parent, bg=WHITE, relief="solid", bd=1)
+        frame.pack(fill=tk.X, padx=12, pady=10)
+        return frame
+
+    def build_ui(self):
+        header = tk.Frame(self.root, bg=TEAL, pady=12)
+        header.pack(fill=tk.X)
+
+        tk.Label(
+            header,
+            text="Bulletin Board Client",
+            font=self.font_header,
+            bg=TEAL,
+            fg=WHITE
+        ).pack()
+
+        top = self.create_card(self.root)
+
+        labels = ["Host:", "Port:", "Username:"]
+        for i, text in enumerate(labels):
+            tk.Label(top, text=text, bg=WHITE, fg=BLACK, font=self.font_bold)\
+                .grid(row=0, column=i*2, sticky="w", padx=6)
+
         self.host_entry = tk.Entry(top, width=15)
         self.host_entry.insert(0, "127.0.0.1")
-        self.host_entry.grid(row=0, column=1)
+        self.style_entry(self.host_entry)
+        self.host_entry.grid(row=0, column=1, padx=6)
 
-        tk.Label(top, text="Port:").grid(row=0, column=2, sticky="w")
-        self.port_entry = tk.Entry(top, width=6)
+        self.port_entry = tk.Entry(top, width=8)
         self.port_entry.insert(0, "12345")
-        self.port_entry.grid(row=0, column=3)
+        self.style_entry(self.port_entry)
+        self.port_entry.grid(row=0, column=3, padx=6)
 
-        tk.Label(top, text="Username:").grid(row=0, column=4, sticky="w")
-        self.user_entry = tk.Entry(top, width=12)
-        self.user_entry.grid(row=0, column=5)
+        self.user_entry = tk.Entry(top, width=15)
+        self.style_entry(self.user_entry)
+        self.user_entry.grid(row=0, column=5, padx=6)
 
         self.connect_btn = tk.Button(top, text="Connect", command=self.connect)
-        self.connect_btn.grid(row=0, column=6, padx=5)
+        self.style_button(self.connect_btn)
+        self.connect_btn.grid(row=0, column=6, padx=10)
 
-        self.groups_btn = tk.Button(top, text="Get Groups", command=self.get_groups, state=tk.DISABLED)
-        self.groups_btn.grid(row=0, column=7, padx=5)
+        self.groups_btn = tk.Button(top, text="Get Groups",
+                                    command=self.get_groups, state=tk.DISABLED)
+        self.style_button(self.groups_btn)
+        self.groups_btn.grid(row=0, column=7, padx=10)
 
         # Group and message controls
-        mid = tk.Frame(self.root)
-        mid.pack(fill=tk.X, padx=5, pady=5)
+        mid = self.create_card(self.root)
 
-        tk.Label(mid, text="Group:").grid(row=0, column=0, sticky="w")
-        self.group_entry = tk.Entry(mid, width=10)
-        self.group_entry.insert(0, "public")
-        self.group_entry.grid(row=0, column=1)
+        tk.Label(mid, text="Group:", bg=WHITE, fg=BLACK, font=self.font_bold)\
+            .grid(row=0, column=0, sticky="w", padx=5)
 
-        self.join_btn = tk.Button(mid, text="Join Group", command=self.join_group, state=tk.DISABLED)
-        self.join_btn.grid(row=0, column=2, padx=3)
+        # DROPDOWN instead of entry
+        self.group_var = tk.StringVar(value="public")
+        self.group_combo = ttk.Combobox(
+            mid,
+            textvariable=self.group_var,
+            values=self.group_list,
+            state="readonly",
+            width=12
+        )
+        self.group_combo.grid(row=0, column=1, padx=5)
 
-        self.users_btn = tk.Button(mid, text="Group Users", command=self.group_users, state=tk.DISABLED)
-        self.users_btn.grid(row=0, column=3, padx=3)
+        self.join_btn = tk.Button(mid, text="Join Group",
+                                  command=self.join_group, state=tk.DISABLED)
+        self.style_button(self.join_btn)
+        self.join_btn.grid(row=0, column=2, padx=5)
 
-        self.leave_btn = tk.Button(mid, text="Leave Group", command=self.leave_group, state=tk.DISABLED)
-        self.leave_btn.grid(row=0, column=4, padx=3)
+        self.users_btn = tk.Button(mid, text="Group Users",
+                                   command=self.group_users, state=tk.DISABLED)
+        self.style_button(self.users_btn)
+        self.users_btn.grid(row=0, column=3, padx=5)
+
+        self.leave_btn = tk.Button(mid, text="Leave Group",
+                                   command=self.leave_group, state=tk.DISABLED)
+        self.style_button(self.leave_btn)
+        self.leave_btn.grid(row=0, column=4, padx=5)
 
         # Subject + Body
-        msg_frame = tk.Frame(self.root)
-        msg_frame.pack(fill=tk.X, padx=5, pady=5)
+        msg_frame = self.create_card(self.root)
+        tk.Label(msg_frame, text="Subject:", bg=WHITE, fg=BLACK,
+                 font=self.font_bold).grid(row=0, column=0, sticky="w", padx=5)
 
-        tk.Label(msg_frame, text="Subject:").grid(row=0, column=0, sticky="w")
-        self.subject_entry = tk.Entry(msg_frame, width=30)
-        self.subject_entry.grid(row=0, column=1, columnspan=3, sticky="we")
+        self.subject_entry = tk.Entry(msg_frame, width=40)
+        self.style_entry(self.subject_entry)
+        self.subject_entry.grid(row=0, column=1, columnspan=3,
+                                sticky="we", pady=5, padx=5)
 
-        tk.Label(msg_frame, text="Body:").grid(row=1, column=0, sticky="nw")
-        self.body_text = tk.Text(msg_frame, height=4, width=50)
-        self.body_text.grid(row=1, column=1, columnspan=3, sticky="we")
+        tk.Label(msg_frame, text="Body:", bg=WHITE, fg=BLACK,
+                 font=self.font_bold).grid(row=1, column=0, sticky="nw", padx=5)
 
-        self.post_btn = tk.Button(msg_frame, text="Post", command=self.post_message, state=tk.DISABLED)
-        self.post_btn.grid(row=1, column=4, padx=3, sticky="n")
+        self.body_text = tk.Text(msg_frame, height=4, width=50,
+                                 relief="solid", bd=1,
+                                 font=self.font_normal,
+                                 bg=WHITE, fg=BLACK, insertbackground=BLACK)
+        self.body_text.grid(row=1, column=1, columnspan=3,
+                            sticky="we", padx=5, pady=5)
+
+        self.post_btn = tk.Button(msg_frame, text="Post",
+                                  command=self.post_message, state=tk.DISABLED)
+        self.style_button(self.post_btn)
+        self.post_btn.grid(row=1, column=4, padx=10, sticky="n")
 
         # Message retrieval
-        tk.Label(msg_frame, text="Msg ID:").grid(row=2, column=0, sticky="w")
-        self.msgid_entry = tk.Entry(msg_frame, width=6)
-        self.msgid_entry.grid(row=2, column=1, sticky="w")
-        self.getmsg_btn = tk.Button(msg_frame, text="Get Message", command=self.get_message, state=tk.DISABLED)
-        self.getmsg_btn.grid(row=2, column=2, padx=3, sticky="w")
+        tk.Label(msg_frame, text="Msg ID:", bg=WHITE, fg=BLACK,
+                 font=self.font_bold).grid(row=2, column=0, sticky="w", padx=5)
+
+        self.msgid_entry = tk.Entry(msg_frame, width=8)
+        self.style_entry(self.msgid_entry)
+        self.msgid_entry.grid(row=2, column=1, sticky="w", padx=5)
+
+        self.getmsg_btn = tk.Button(msg_frame, text="Get Message",
+                                    command=self.get_message, state=tk.DISABLED)
+        self.style_button(self.getmsg_btn)
+        self.getmsg_btn.grid(row=2, column=2, padx=10, sticky="w")
 
         # Log area
-        self.log = scrolledtext.ScrolledText(self.root, height=18, width=80, state=tk.DISABLED)
+        log_frame = self.create_card(self.root)
+        self.log = scrolledtext.ScrolledText(
+            log_frame,
+            height=16,
+            width=90,
+            state=tk.DISABLED,
+            bg=WHITE,
+            fg=BLACK,
+            insertbackground=BLACK,
+            font=("Consolas", 10),
+            relief="solid",
+            bd=1
+        )
         self.log.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # Exit button
-        bottom = tk.Frame(self.root)
-        bottom.pack(fill=tk.X, padx=5, pady=5)
-        tk.Button(bottom, text="Exit", command=self.on_exit).pack(side=tk.RIGHT)
+        # Exit Button
+        bottom = tk.Frame(self.root, bg=WHITE)
+        bottom.pack(fill=tk.X, padx=12, pady=10)
+
+        exit_btn = tk.Button(bottom, text="Exit", command=self.on_exit)
+        self.style_button(exit_btn)
+        exit_btn.pack(side=tk.RIGHT)
 
     def log_line(self, text):
         self.log.configure(state=tk.NORMAL)
@@ -132,9 +242,11 @@ class GuiClient:
         self.sock_file = f
         self.connected = True
         self.log_line(f"[CLIENT] Connected to {host}:{port}")
-        # start receiver thread
+
+        # Start receiver thread
         threading.Thread(target=self.receiver_loop, daemon=True).start()
-        # send username
+        
+        # Send username
         self.send_obj({"action": "set_username", "username": username})
         self.groups_btn.config(state=tk.NORMAL)
         self.join_btn.config(state=tk.NORMAL)
@@ -184,13 +296,24 @@ class GuiClient:
         elif t == "response":
             cmd = obj.get("command")
             if cmd == "groups":
-                self.log_line("[GROUPS] " + ", ".join(obj.get("groups", [])))
+                groups = obj.get("groups", [])
+                self.group_list = groups or self.group_list
+                self.group_combo["values"] = self.group_list
+                # keep current if valid, else default to public / first
+                current = self.group_var.get()
+                if current not in self.group_list:
+                    if "public" in self.group_list:
+                        self.group_var.set("public")
+                    elif self.group_list:
+                        self.group_var.set(self.group_list[0])
+
+                self.log_line("[GROUPS] " + ", ".join(self.group_list))
             elif cmd == "users":
                 self.log_line(f"[USERS in {obj.get('group')}] " +
                               ", ".join(obj.get("users", [])))
             elif cmd == "message":
                 m = obj.get("message", {})
-                self.log_line(f"[MESSAGE {m.get('id')} in {obj.get('group')}]")
+                self.log_line(f"[MESSAGE {m.get('id')} in {m.get('group')}]")
                 self.log_line(f" From: {m.get('sender')}")
                 self.log_line(f" Date: {m.get('timestamp')}")
                 self.log_line(f" Subject: {m.get('subject')}")
@@ -213,36 +336,34 @@ class GuiClient:
             return
         self.send_obj({"action": "groups"})
 
+    def _current_group(self):
+        g = self.group_var.get().strip()
+        if not g:
+            g = "public"
+        return g
+
     def join_group(self):
         if not self.connected:
             return
-        g = self.group_entry.get().strip()
-        if not g:
-            g = "public"
+        g = self._current_group()
         self.send_obj({"action": "join", "group": g})
 
     def group_users(self):
         if not self.connected:
             return
-        g = self.group_entry.get().strip()
-        if not g:
-            g = "public"
+        g = self._current_group()
         self.send_obj({"action": "users", "group": g})
 
     def leave_group(self):
         if not self.connected:
             return
-        g = self.group_entry.get().strip()
-        if not g:
-            g = "public"
+        g = self._current_group()
         self.send_obj({"action": "leave", "group": g})
 
     def post_message(self):
         if not self.connected:
             return
-        g = self.group_entry.get().strip()
-        if not g:
-            g = "public"
+        g = self._current_group()
         subj = self.subject_entry.get().strip()
         body = self.body_text.get("1.0", tk.END).strip()
         if not subj or not body:
@@ -254,9 +375,7 @@ class GuiClient:
     def get_message(self):
         if not self.connected:
             return
-        g = self.group_entry.get().strip()
-        if not g:
-            g = "public"
+        g = self._current_group()
         mid = self.msgid_entry.get().strip()
         if not mid:
             messagebox.showerror("Error", "Message ID required.")
@@ -280,7 +399,9 @@ class GuiClient:
                 pass
         self.root.destroy()
 
+
 if __name__ == "__main__":
     root = tk.Tk()
+    root.option_add("*disabledForeground", "white")
     app = GuiClient(root)
     root.mainloop()
