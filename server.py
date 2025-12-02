@@ -18,29 +18,26 @@ class ClientInfo:
     def __repr__(self):
         return f"<Client {self.username}@{self.addr}>"
 
-# Global server state
 clients_lock = threading.Lock()
-clients = set()  # set of ClientInfo
+clients = set()
 username_to_client = {}
 
 state_lock = threading.Lock()
-groups = {}  # group_name -> {"members": set(usernames), "messages": [msg_dict]}
+groups = {}  
 next_msg_id = 1
 
-# Predefined groups for Part 2
+# groups are premade as mentioned in the assignment
 PREDEFINED_GROUPS = ["group1", "group2", "group3", "group4", "group5"]
 PUBLIC_GROUP = "public"
 
-# Shutdown control
+# to shutdown the sever
 server_stop_event = threading.Event()
 
 
 def init_groups():
     with state_lock:
         groups.clear()
-        # public board (Part 1)
         groups[PUBLIC_GROUP] = {"members": set(), "messages": []}
-        # private groups (Part 2)
         for g in PREDEFINED_GROUPS:
             groups[g] = {"members": set(), "messages": []}
 
@@ -51,15 +48,10 @@ def send_json(client: ClientInfo, obj: dict):
         with client.send_lock:
             client.sock.sendall(data)
     except OSError:
-        # socket likely closed
         pass
 
-
+# function to send an event to all users in a group 
 def broadcast_event(group_name: str, event: dict, exclude_username=None):
-    """
-    Send an event to all users in a given group.
-    event should already include {"type": "event", ...}
-    """
     with state_lock:
         members = list(groups.get(group_name, {}).get("members", []))
     targets = []
@@ -73,7 +65,7 @@ def broadcast_event(group_name: str, event: dict, exclude_username=None):
     for c in targets:
         send_json(c, event)
 
-
+# function to handle the username setting process
 def handle_set_username(client, data):
     username = data.get("username")
     if not username:
@@ -91,9 +83,7 @@ def handle_set_username(client, data):
         "subtype": "username_accepted",
         "message": f"Username {username} accepted"
     })
-    # Immediately send list of available groups (Part 2 requirement)
     handle_groups(client, {})
-
 
 def handle_join(client, data):
     group = data.get("group", PUBLIC_GROUP)
@@ -107,20 +97,16 @@ def handle_join(client, data):
     with state_lock:
         groups[group]["members"].add(client.username)
         client.groups.add(group)
-        # last 2 messages
-        history_msgs = groups[group]["messages"][-2:]
+        history_msgs = groups[group]["messages"][-2:] # last 2 messages printed to connected user
 
-    # send history to this user
     send_json(client, {
         "type": "history",
         "group": group,
         "messages": history_msgs
     })
 
-    # send users list (including self)
     handle_users(client, {"group": group})
 
-    # notify others in group
     event = {
         "type": "event",
         "event": "user_joined",
@@ -160,7 +146,6 @@ def handle_post(client, data):
         }
         groups[group]["messages"].append(msg)
 
-    # Broadcast a summary of the new message
     event = {
         "type": "event",
         "event": "new_message",
@@ -184,7 +169,7 @@ def handle_users(client, data):
 
     with state_lock:
         members = groups[group]["members"]
-        # ❗ Privacy: must be a member to see users
+        # check if user is a part of the group or not
         if client.username not in members:
             send_json(client, {
                 "type": "error",
@@ -246,7 +231,6 @@ def handle_get_message(client, data):
 
     with state_lock:
         members = groups[group]["members"]
-        # ❗ Privacy: must be a member to see messages
         if client.username not in members:
             send_json(client, {
                 "type": "error",
@@ -276,14 +260,12 @@ def handle_get_message(client, data):
     })
 
 def disconnect_client(client: ClientInfo):
-    # Remove from groups and global lists
     with clients_lock:
         if client in clients:
             clients.remove(client)
         if client.username and username_to_client.get(client.username) == client:
             del username_to_client[client.username]
 
-    # Broadcast user_left for each group they were in
     if client.username:
         with state_lock:
             groups_and_members = list(groups.items())
@@ -310,7 +292,6 @@ def handle_client(client: ClientInfo):
     sock = client.sock
     addr = client.addr
     print(f"New connection from {addr}")
-    # Welcome message
     send_json(client, {
         "type": "info",
         "message": "Welcome to the Bulletin Board. Please set your username."
@@ -344,7 +325,6 @@ def handle_client(client: ClientInfo):
             elif action == "leave":
                 handle_leave(client, data)
             elif action == "get_message":
-                # ensure msg id is int if it came as string
                 if "id" in data and isinstance(data["id"], str):
                     try:
                         data["id"] = int(data["id"])
@@ -354,7 +334,6 @@ def handle_client(client: ClientInfo):
             elif action == "exit":
                 break
             elif action == "shutdown":
-                # Remote shutdown command (extra convenience)
                 print(f"Shutdown requested by {client.username} from {client.addr}")
                 send_json(client, {"type": "info", "message": "Server shutting down."})
                 server_stop_event.set()
@@ -373,7 +352,6 @@ def run_server(port: int):
     srv_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv_sock.bind(("0.0.0.0", port))
     srv_sock.listen()
-    # IMPORTANT: timeout so Ctrl+C works on Windows while accept() is blocking
     srv_sock.settimeout(1.0)
 
     print(f"Server listening on port {port}... (Ctrl+C to stop)")
@@ -383,7 +361,6 @@ def run_server(port: int):
             try:
                 client_sock, addr = srv_sock.accept()
             except socket.timeout:
-                # Just loop again, allowing KeyboardInterrupt or shutdown event to be processed
                 continue
 
             client = ClientInfo(client_sock, addr)
@@ -402,14 +379,11 @@ def run_server(port: int):
         except OSError:
             pass
 
-        # Disconnect all clients
         with clients_lock:
             current_clients = list(clients)
         for c in current_clients:
             disconnect_client(c)
-
         print("Server stopped.")
-
 
 if __name__ == "__main__":
     port = DEFAULT_PORT

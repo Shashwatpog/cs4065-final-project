@@ -24,13 +24,12 @@ class GuiClient:
         self.font_bold = ("Segoe UI", 10, "bold")
         self.font_header = ("Segoe UI", 14, "bold")
 
-        # default group list; will be updated from server "groups" response
+        # premade group list
         self.group_list = ["public", "group1", "group2", "group3", "group4", "group5"]
 
         self.build_ui()
 
-    # Styling helpers
-
+    #styling helpers to make GUI look nice
     def style_button(self, button):
         button.configure(
             bg=TEAL,
@@ -105,13 +104,11 @@ class GuiClient:
         self.style_button(self.groups_btn)
         self.groups_btn.grid(row=0, column=7, padx=10)
 
-        # Group and message controls
         mid = self.create_card(self.root)
 
         tk.Label(mid, text="Group:", bg=WHITE, fg=BLACK, font=self.font_bold)\
             .grid(row=0, column=0, sticky="w", padx=5)
 
-        # DROPDOWN instead of entry
         self.group_var = tk.StringVar(value="public")
         self.group_combo = ttk.Combobox(
             mid,
@@ -137,7 +134,6 @@ class GuiClient:
         self.style_button(self.leave_btn)
         self.leave_btn.grid(row=0, column=4, padx=5)
 
-        # Subject + Body
         msg_frame = self.create_card(self.root)
         tk.Label(msg_frame, text="Subject:", bg=WHITE, fg=BLACK,
                  font=self.font_bold).grid(row=0, column=0, sticky="w", padx=5)
@@ -162,7 +158,6 @@ class GuiClient:
         self.style_button(self.post_btn)
         self.post_btn.grid(row=1, column=4, padx=10, sticky="n")
 
-        # Message retrieval
         tk.Label(msg_frame, text="Msg ID:", bg=WHITE, fg=BLACK,
                  font=self.font_bold).grid(row=2, column=0, sticky="w", padx=5)
 
@@ -175,7 +170,7 @@ class GuiClient:
         self.style_button(self.getmsg_btn)
         self.getmsg_btn.grid(row=2, column=2, padx=10, sticky="w")
 
-        # Log area
+        #logging frame area
         log_frame = self.create_card(self.root)
         self.log = scrolledtext.ScrolledText(
             log_frame,
@@ -191,7 +186,6 @@ class GuiClient:
         )
         self.log.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # Exit Button
         bottom = tk.Frame(self.root, bg=WHITE)
         bottom.pack(fill=tk.X, padx=12, pady=10)
 
@@ -243,10 +237,8 @@ class GuiClient:
         self.connected = True
         self.log_line(f"[CLIENT] Connected to {host}:{port}")
 
-        # Start receiver thread
         threading.Thread(target=self.receiver_loop, daemon=True).start()
         
-        # Send username
         self.send_obj({"action": "set_username", "username": username})
         self.groups_btn.config(state=tk.NORMAL)
         self.join_btn.config(state=tk.NORMAL)
@@ -299,7 +291,6 @@ class GuiClient:
                 groups = obj.get("groups", [])
                 self.group_list = groups or self.group_list
                 self.group_combo["values"] = self.group_list
-                # keep current if valid, else default to public / first
                 current = self.group_var.get()
                 if current not in self.group_list:
                     if "public" in self.group_list:
@@ -331,6 +322,7 @@ class GuiClient:
         else:
             self.log_line(f"[SERVER] {obj}")
 
+    # group functionalities
     def get_groups(self):
         if not self.connected:
             return

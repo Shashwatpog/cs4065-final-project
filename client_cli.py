@@ -28,8 +28,6 @@ def handle_server_message(obj):
         print(f"[INFO] {msg}")
         if subtype == "username_accepted":
             global current_username
-            # We don't know the username from here,
-            # but it's okay; we already know it client-side.
     elif t == "error":
         print(f"[ERROR] {obj.get('message','')}")
     elif t == "event":
@@ -100,7 +98,7 @@ def connect_cmd(host, port):
         print("Already connected. Use %exit to disconnect first.")
         return
 
-    # 1) connect socket
+    # socket connecting
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.connect((host, port))
     f = s.makefile("r")
@@ -109,7 +107,6 @@ def connect_cmd(host, port):
     connected = True
     print(f"Connected to {host}:{port}")
 
-    # 2) read and handle the initial WELCOME message from server (if any)
     try:
         first = f.readline()
         if first:
@@ -126,7 +123,6 @@ def connect_cmd(host, port):
         sock.close()
         return
 
-    # 3) Handshake for username (only look at responses to set_username)
     while True:
         username = input("Enter a username: ").strip()
         if not username:
@@ -134,7 +130,6 @@ def connect_cmd(host, port):
 
         send_obj({"action": "set_username", "username": username})
 
-        # loop until we see either an error or username_accepted
         while True:
             line = f.readline()
             if not line:
@@ -153,35 +148,28 @@ def connect_cmd(host, port):
                 print("[CLIENT] Invalid JSON during handshake:", line)
                 continue
 
-            # If it's an error, show it and go back to ask for username again
             if obj.get("type") == "error":
                 handle_server_message(obj)
-                # break inner loop -> ask username again
                 break
 
-            # Handle informational / other responses (e.g., groups)
             handle_server_message(obj)
 
-            # Username accepted?
             if obj.get("type") == "info" and obj.get("subtype") == "username_accepted":
                 current_username = username
-                # break out of BOTH loops
                 username_accepted = True
                 break
         else:
-            # shouldn't hit this; just in case
             continue
 
-        # Did we accept the username? if yes, fall out of outer while
         if 'username_accepted' in locals() and username_accepted:
             break
 
-    # 4) Start receiver thread AFTER username is finalized
+    # receiver thread after accepting the username
     receiver_thread = threading.Thread(target=receiver_loop, daemon=True)
     receiver_thread.start()
     print("You can now use %join, %groups, %post, etc. Type %help for commands.")
 
-
+# help command options
 def print_help():
     print("Commands:")
     print("  %connect <host> <port>")
@@ -216,6 +204,7 @@ def main_loop():
         parts = cmd.split()
         name = parts[0].lower()
 
+        # check for different commands entered and respond appropriately
         if name == "%help":
             print_help()
 
